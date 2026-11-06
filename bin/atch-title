@@ -1,0 +1,8 @@
+#!/bin/sh
+
+title="$1"
+[ -n "$title" ] || { echo "usage: atch-title <title>" >&2; exit 1; }
+[ -n "${ATCH_SESSION:-}" ] || { echo "atch-title: not running inside an atch session (ATCH_SESSION unset)" >&2; exit 1; }
+
+sock="${ATCH_SESSION##*:}"
+printf '%s' "$title" > "${sock}.title"

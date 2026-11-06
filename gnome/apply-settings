@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+wm=org.gnome.desktop.wm.keybindings
+tiling=org.gnome.mutter.keybindings
+shell=org.gnome.shell.keybindings
+
+gsettings set $shell toggle-overview "[]"
+gsettings set $shell toggle-application-view "['<Super>r']"
+
+gsettings set $wm close "['<Super>q']"
+gsettings set $wm toggle-maximized "['<Super>w']"
+gsettings set $wm minimize "['<Super>s']"
+gsettings set $wm move-to-monitor-left "['<Super>a']"
+gsettings set $wm move-to-monitor-right "['<Super>d']"
+gsettings set $tiling toggle-tiled-left "['<Super><Shift>a']"
+gsettings set $tiling toggle-tiled-right "['<Super><Shift>d']"
+gsettings set $wm maximize "['<Super><Shift>w']"
+gsettings set $wm unmaximize "['<Super><Shift>s']"
+
+gsettings set org.gnome.desktop.peripherals.touchpad natural-scroll true
+
+favourites=$(gsettings get org.gnome.shell favorite-apps)
+IFS=: read -ra data_dirs <<<"${XDG_DATA_HOME:-$HOME/.local/share}:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
+first=()
+for app in vivaldi-stable.desktop org.wezfurlong.wezterm.desktop; do
+  for dir in "${data_dirs[@]}"; do
+    if [[ -f $dir/applications/$app ]]; then
+      first+=("'$app'")
+      break
+    fi
+  done
+done
+rest=$(echo "$favourites" | tr -d '[]' | tr ',' '\n' | sed 's/^ *//' |
+  grep -v -e vivaldi-stable.desktop -e wezterm.desktop -e '^@as$' -e '^$' || true)
+joined=$(printf '%s\n' "${first[@]}" $rest | paste -sd, - | sed 's/,/, /g')
+gsettings set org.gnome.shell favorite-apps "[$joined]"
+
+gsettings set org.gnome.desktop.screensaver picture-uri \
+  "$(gsettings get org.gnome.desktop.background picture-uri)"
+
+echo "GNOME settings applied"

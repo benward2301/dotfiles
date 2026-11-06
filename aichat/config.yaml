@@ -1,0 +1,40 @@
+model: claude:claude-sonnet-5-5
+clients:
+- type: openai
+  models:
+  - name: gpt-6.1-sol
+    type: chat
+    supports_vision: true
+    supports_function_calling: true
+  - name: gpt-6-sol
+    type: chat
+    supports_vision: true
+    supports_function_calling: true
+  - name: gpt-6-luna
+    type: chat
+    supports_vision: true
+    supports_function_calling: true
+  - name: gpt-6-astra
+    type: chat
+    supports_vision: true
+    supports_function_calling: true
+- type: claude
+  models:
+  - name: claude-fable-5-1
+    type: chat
+    max_output_tokens: 16000
+    require_max_tokens: true
+    supports_vision: true
+    supports_function_calling: true
+  - name: claude-opus-5-5
+    type: chat
+    max_output_tokens: 16000
+    require_max_tokens: true
+    supports_vision: true
+    supports_function_calling: true
+  - name: claude-sonnet-5-5
+    type: chat
+    max_output_tokens: 16000
+    require_max_tokens: true
+    supports_vision: true
+    supports_function_calling: true

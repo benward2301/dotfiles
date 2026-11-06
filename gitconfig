@@ -1,0 +1,30 @@
+[include]
+  path = ~/.gitconfig.local
+  path = ~/.config/delta/theme
+[log]
+  date = relative
+[format]
+  pretty = %C(yellow)%h %C(blue)%<(15,trunc)%ad %C(green)%<(15,trunc)%an %C(reset)%C(white)%s %C(reset)%C(auto)%d%C(reset)
+[core]
+  autocrlf = input
+  editor = nvim
+  pager = sh -c 'command -v delta >/dev/null 2>&1 && exec delta || exec ${PAGER:-less}'
+  excludesFile = ~/.config/git/ignore
+[init]
+  defaultBranch = main
+[interactive]
+  diffFilter = sh -c 'command -v delta >/dev/null 2>&1 && exec delta --color-only || exec cat'
+[delta]
+  navigate = true
+  line-numbers = true
+  hunk-header-style = omit
+  file-added-label = "[A]"
+  file-copied-label = "[C]"
+  file-modified-label = "[M]"
+  file-renamed-label = "[R]"
+  file-removed-label = "[D]"
+  file-style = white bold
+  line-numbers-plus-style = green
+  line-numbers-minus-style = red
+  line-numbers-left-format = "{nm:>4} "
+  line-numbers-right-format = "{np:>4}  "

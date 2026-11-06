@@ -1,0 +1,38 @@
+#!/bin/sh
+set -eu
+
+here=$(cd "$(dirname "$0")" && pwd -P)
+conf=${1:-$here/../../dotfiles/keyd/default.conf}
+[ -r "$conf" ] || { echo "cannot read $conf" >&2; exit 1; }
+
+[ "$(id -u)" -eq 0 ] || { echo "run this as root" >&2; exit 1; }
+
+if ! command -v keyd >/dev/null 2>&1 || [ -x /usr/local/bin/keyd ]; then
+  install -Dm755 "$here/keyd" /usr/local/bin/keyd
+fi
+if ! systemctl cat keyd.service >/dev/null 2>&1; then
+  cat >/etc/systemd/system/keyd.service <<'EOF'
+[Unit]
+Description=key remapping daemon
+Requires=local-fs.target
+After=local-fs.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/keyd
+
+[Install]
+WantedBy=sysinit.target
+EOF
+fi
+install -Dm644 "$conf" /etc/keyd/default.conf
+echo uinput >/etc/modules-load.d/keyd.conf
+modprobe uinput 2>/dev/null || true
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon -F /usr/local/bin/keyd /etc/systemd/system/keyd.service \
+    /etc/modules-load.d/keyd.conf 2>/dev/null || true
+  restorecon -RF /etc/keyd 2>/dev/null || true
+fi
+systemctl daemon-reload
+systemctl enable keyd
+systemctl restart keyd

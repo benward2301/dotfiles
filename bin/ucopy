@@ -1,0 +1,22 @@
+#!/bin/sh
+
+if command -v wl-copy >/dev/null 2>&1; then
+    clip="wl-copy"
+elif command -v xclip >/dev/null 2>&1; then
+    clip="xclip -selection clipboard"
+elif command -v xsel >/dev/null 2>&1; then
+    clip="xsel --clipboard --input"
+else
+    echo "No clipboard tool found" >&2
+    exit 1
+fi
+
+if [ $# -gt 0 ]; then
+    content=$*
+else
+    content=$(cat)
+fi
+
+printf '%s' "$content" | $clip
+
+printf 'copied %s line(s)\n' "$(printf '%s' "$content" | grep -c '')" >&2

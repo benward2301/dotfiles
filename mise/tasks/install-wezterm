@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+#MISE description="Install the wezterm nightly AppImage, its icon and desktop entry"
+set -euo pipefail
+
+if [[ "$(uname -s)-$(uname -m)" != "Linux-x86_64" ]]; then
+  echo "  skipped: the AppImage is Linux x86_64 only"
+  exit 0
+fi
+
+base=https://github.com/wezterm/wezterm/releases/download/nightly
+asset=WezTerm-nightly-Ubuntu24.04.AppImage
+dest="$HOME/.local/bin/wezterm"
+
+data="${XDG_DATA_HOME:-$HOME/.local/share}"
+icon="$data/icons/hicolor/128x128/apps/org.wezfurlong.wezterm.png"
+entry="$data/applications/org.wezfurlong.wezterm.desktop"
+
+want=$(curl -fsSL "$base/$asset.sha256" | awk '{print $1}')
+
+if [[ -f "$dest" && "$(sha256sum "$dest" | awk '{print $1}')" == "$want" ]]; then
+  echo "  wezterm is up to date"
+else
+  mkdir -p "$(dirname "$dest")"
+  tmp=$(mktemp "$dest.XXXXXX")
+  trap 'rm -f "$tmp"' EXIT
+
+  echo "  fetching $asset"
+  curl -fsSL "$base/$asset" -o "$tmp"
+  echo "$want  $tmp" | sha256sum -c --quiet -
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$dest"
+  rm -f "$icon"
+fi
+
+if [[ ! -f "$icon" ]]; then
+  work=$(mktemp -d)
+  path=usr/share/icons/hicolor/128x128/apps/org.wezfurlong.wezterm.png
+  (cd "$work" && "$dest" --appimage-extract "$path" >/dev/null)
+  install -Dm644 "$work/squashfs-root/$path" "$icon"
+  rm -rf "$work"
+fi
+
+mkdir -p "$(dirname "$entry")"
+cat > "$entry" <<EOF
+[Desktop Entry]
+Name=WezTerm
+Comment=Wez's Terminal Emulator
+Keywords=shell;prompt;command;commandline;cmd;
+Icon=org.wezfurlong.wezterm
+StartupWMClass=org.wezfurlong.wezterm
+Exec="$dest" start --cwd .
+Type=Application
+Categories=System;TerminalEmulator;
+Terminal=false
+StartupNotify=true
+EOF
+
+command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true

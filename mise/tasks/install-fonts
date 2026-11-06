@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+#MISE description="Download LigaSFMono Nerd Font from GitHub"
+set -euo pipefail
+
+case "$(uname -s)" in
+  Darwin) FONT_DIR="$HOME/Library/Fonts" ;;
+  *)      FONT_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fonts" ;;
+esac
+
+mkdir -p "$FONT_DIR"
+
+for variant in Bold BoldItalic Heavy HeavyItalic Light LightItalic Medium MediumItalic Regular RegularItalic Semibold SemiboldItalic; do
+  file="LigaSFMonoNerdFont-$variant.otf"
+  [[ -f "$FONT_DIR/$file" ]] && continue
+  echo "  fetching $file"
+  curl -fsSL "https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/$file" -o "$FONT_DIR/$file"
+done
+
+command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$FONT_DIR" >/dev/null 2>&1 || true

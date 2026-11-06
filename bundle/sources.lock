@@ -1,0 +1,24 @@
+rocky-oci        1210df99dcf0ef4d73940244e6d703935175629598b09c0e430da20e76768402 https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-Container-Base-9.8-20260525.0.x86_64.oci.tar.xz
+wezterm-gui      unpinned https://github.com/wezterm/wezterm/releases/download/nightly/wezterm-gui-nightly-centos9.rpm
+wezterm-common   unpinned https://github.com/wezterm/wezterm/releases/download/nightly/wezterm-common-nightly-centos9.rpm
+zsh              6df668fb6e9a12874e0d80518d582f2e99e512d4a4532fa73d938360aaddc838 https://github.com/romkatv/zsh-bin/releases/download/v6.1.1/zsh-5.8-linux-x86_64.tar.gz
+patchelf         2abdc34fbe949c995a1baa4ec310896a085588a45a99cd0d726851bdfac2a4bb https://github.com/NixOS/patchelf/releases/download/0.19.2/patchelf-0.19.2-x86_64.tar.gz
+keyd             697089681915b89d9e98caf93d870dbd4abce768af8a647d54650a6a90744e26 https://github.com/rvaiya/keyd/archive/refs/tags/v2.6.0.tar.gz
+claude           674deba0bba9aee479f4503c438b49303b6fdd304b9a471b14977aaec5215453 https://downloads.claude.ai/claude-code-releases/2.1.300/linux-x64/claude
+tree-sitter-src  d35c96e68736bd9569d2757c3cc71052485f33082c3825f1aed9d0e86013a159 https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.27.0.tar.gz
+
+neovim           bce0f56eda1f1b1db6eee8f4133d7a38813ea07933837dd1777411ca384c6875 https://github.com/neovim/neovim/releases/download/v0.12.5/nvim-linux-x86_64.tar.gz
+tealdeer         dc7263b550e90c0689ea2cb434e3144469805d5dddecbb1f7fc534e1185b7408 https://github.com/tealdeer-rs/tealdeer/releases/download/v1.9.0/tealdeer-linux-x86_64-musl
+
+font-Bold           c99a4a30a0c45e1fc46c266f7b1542ab72634265ae98b48fd6f2619dc8e524b7 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Bold.otf
+font-BoldItalic     3fc8fb01bd8c5d43c6db797bd92aa43c0023a1d1979b5339340711e0b242de41 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-BoldItalic.otf
+font-Heavy          131e1fbe13e2f17f7f8eff507f231c697beb09708535beccb399dac12f9db4f8 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Heavy.otf
+font-HeavyItalic    5a192bc0526008006e07dae1e8a2d9cd5283265b91738630b234dd78ef8bb60e https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-HeavyItalic.otf
+font-Light          91555f52a75496748d7fd7d2819219f0aa9bad22a0294f317b1812b86cc297d5 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Light.otf
+font-LightItalic    d6187873eaea41ca73b6393e4a65ce8a1c9adddc5f6968987021a59bb8343165 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-LightItalic.otf
+font-Medium         ef36b37c944267f55dedfb4b98cfd85a6bcf859c997d9e054781c157b03689f9 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Medium.otf
+font-MediumItalic   619ec6bcdd5cdc0858ee5e59fcd5d831f3a6a297b3fcc560418f92e5962a2a17 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-MediumItalic.otf
+font-Regular        30c393a05c951cc1802ffa4c1280742dec724ca0f1dfc31279ca1772b11ebb2b https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Regular.otf
+font-RegularItalic  6fd9d03bc462d1257e5b31c041794d37d55fc61237d9828e6abe24bf6315e198 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-RegularItalic.otf
+font-Semibold       5b90a97c2d24d04aeb2030336ba56617abe858ad77fdd40ed39d542cd931799b https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-Semibold.otf
+font-SemiboldItalic 0d65c7647c21a65d01b336d80c083bb3d872bb91a7079a6ff725125a58cb1837 https://raw.githubusercontent.com/shaunsingh/SFMono-Nerd-Font-Ligaturized/main/LigaSFMonoNerdFont-SemiboldItalic.otf

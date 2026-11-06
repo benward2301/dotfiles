@@ -1,0 +1,35 @@
+#!/bin/sh
+set -eu
+
+case $1 in
+  extract)
+    oci=$2 rootfs=$3
+    manifest=$(grep -o '"digest":"sha256:[0-9a-f]*"' "$oci/index.json" | head -1 | cut -d: -f3 | tr -d '"')
+    layers=$(grep -o '"digest":"sha256:[0-9a-f]*"' "$oci/blobs/sha256/$manifest" | sed 1d | cut -d: -f3 | tr -d '"')
+    mkdir -p "$rootfs"
+    for layer in $layers; do
+      tar -xf "$oci/blobs/sha256/$layer" -C "$rootfs"
+    done
+    ;;
+
+  run)
+    rootfs=$2 bundle=$3 work=$4 dl=$5
+    shift 5
+    mount --rbind /dev "$rootfs/dev"
+    mount -t proc proc "$rootfs/proc"
+    mount -t tmpfs tmpfs "$rootfs/tmp"
+    for pair in "bundle:$bundle" "work:$work" "dl:$dl"; do
+      mkdir -p "$rootfs/${pair%%:*}"
+      mount --bind "${pair#*:}" "$rootfs/${pair%%:*}"
+    done
+    cp -L /etc/resolv.conf "$rootfs/etc/resolv.conf"
+    exec chroot "$rootfs" /usr/bin/env -i \
+      HOME=/root PATH=/usr/local/bin:/usr/bin:/usr/sbin \
+      TERM="${TERM:-dumb}" LANG=C.UTF-8 "$@"
+    ;;
+
+  *)
+    echo "usage: ns extract OCI_DIR ROOTFS | ns run ROOTFS BUNDLE WORK DL CMD..." >&2
+    exit 2
+    ;;
+esac

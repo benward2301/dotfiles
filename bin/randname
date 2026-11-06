@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+adjectives=(
+  abandoned aging amber ancient auburn azure beautiful beige big black blue
+  bronze brown charcoal charming cobalt copper coral cream crimson curious
+  elegant emerald exquisite famous forgotten giant glorious golden gorgeous
+  grand green grey hidden huge humble hushed indigo ivory jade large lavender
+  legendary little lost loud lovely magenta magnificent majestic maroon massive
+  mini modest mysterious narrow noble noisy olive orange ordinary pink plain
+  purple quiet red ruby saffron sapphire scarlet short silent silver small
+  splendid tall tan teal tiny towering turquoise vast violet white wide yellow
+)
+
+nouns=(
+  acorn airplane anchor anvil apple arch axe badge ball balloon bamboo banner
+  barge barn barrel basket bear bed beetle bell bench bicycle birch bird
+  blanket board boat book boot bottle bowl box brick bridge broom brush bucket
+  buffalo bus butterfly cabin cactus cage camel candle canoe car carpet cart
+  castle cat cathedral cauldron cedar chair chariot cherry chestnut chimney
+  church clock clover coat coin compass cottage cougar cow crab crane crow
+  crown cup curtain daffodil dahlia daisy deer dog dolphin dome donkey door
+  dove drum duck eagle eel elk elm falcon fence fern ferret ferry fig finch
+  flag flask flower fork fortress fountain fox frog galleon gate gazelle globe
+  glove gondola goose grape grass hammer hare hat hawk helicopter helmet heron
+  holly horse hound iris ivy jaguar jar jeep jug juniper kettle key kitten
+  knife ladder lamb lamp lantern lemon leopard lichen lily lion lizard llama
+  lotus lynx magnolia magpie mailbox maple mask mint mirror mole moose moss
+  mouse mug mushroom needle newt oak orchid otter oven owl palace palm pan
+  panda pansy panther parrot peach peacock pear pelican pencil penguin piano
+  pig pigeon pillar pillow pine pipe plate poppy pony pot pouch pumpkin puppy
+  pyramid quail rabbit raccoon raft ram rat raven redwood reed ribbon ring
+  road robe robin rocket rope rose rug saddle sage salmon scarf scooter scroll
+  seal shark shed sheep shelf shield ship shoe shovel sign silo sleigh slipper
+  snail snake sparrow spoon spruce squirrel stable staff stag statue stool
+  stork stove submarine sunflower swan sword sycamore table tablet taxi
+  telescope temple tent thistle thyme tiger toad tomb tortoise tower tractor
+  train tram trout truck trumpet tulip tunnel turtle urn van vase vine violin
+  vulture wagon wall walnut walrus wand warehouse watch weasel well whale
+  whistle willow window wolf wren yacht zebra
+)
+
+usage() {
+  echo "Usage: randname [-u]"
+  echo "  -u    Append a short UUID"
+  exit 1
+}
+
+append_uuid=false
+
+while getopts "uh" opt; do
+  case $opt in
+    u) append_uuid=true ;;
+    h) usage ;;
+    *) usage ;;
+  esac
+done
+
+adj_count=${#adjectives[@]}
+noun_count=${#nouns[@]}
+
+adj_index=$((RANDOM % adj_count))
+noun_index=$((RANDOM % noun_count))
+
+result="${adjectives[$adj_index]}-${nouns[$noun_index]}"
+
+if $append_uuid; then
+  if command -v uuidgen &>/dev/null; then
+    short_uuid=$(uuidgen | tr '[:upper:]' '[:lower:]' | cut -c1-8)
+  else
+    short_uuid=$(head -c 4 /dev/urandom | od -An -tx1 | tr -d ' \n')
+  fi
+  result="${result}-${short_uuid}"
+fi
+
+echo "$result"

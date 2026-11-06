@@ -1,0 +1,85 @@
+{
+  "includeCoAuthoredBy": false,
+  "model": "sonnet",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/atch-title-hook.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.claude/scripts/atch-title-hook.sh"
+          },
+          {
+            "type": "command",
+            "command": "sleep 10; ~/.claude/scripts/title-session.sh",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sleep 10; bash -c 'tp=$(cat | jq -r \".transcript_path\"); ~/.claude/scripts/export-session.sh \"$tp\" 2>/dev/null'",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sleep 10; bash -c 'tp=$(cat | jq -r \".transcript_path\"); ~/.claude/scripts/export-session.sh \"$tp\" 2>/dev/null'",
+            "timeout": 30,
+            "async": true
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/scripts/statusline.sh"
+  },
+  "enabledPlugins": {
+    "lua-lsp@claude-plugins-official": true,
+    "context7@context7-marketplace": true
+  },
+  "extraKnownMarketplaces": {
+    "context7-marketplace": {
+      "source": {
+        "source": "github",
+        "repo": "upstash/context7"
+      }
+    }
+  },
+  "syntaxHighlightingDisabled": true,
+  "alwaysThinkingEnabled": true,
+  "tui": "default",
+  "voice": {
+    "enabled": true,
+    "mode": "hold"
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "theme": "auto"
+}

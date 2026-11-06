@@ -1,0 +1,340 @@
+#!/bin/bash
+set -euo pipefail
+
+id=$1
+src=/work/src
+payload=/work/payload
+build_home=/__devtools_home__
+glibc_max=2.34
+
+parsers=(bash c diff html java lua luadoc markdown markdown_inline query vim vimdoc)
+
+log() { printf '\n==> %s\n' "$*"; }
+record() {
+  local version=$3
+  [[ $version != v[0-9]* ]] || version=${version#v}
+  printf '%s\t%s\t%s\n' "$1" "$2" "$version" >>/work/manifest.tsv
+}
+
+fetch() {
+  local url=$1 sum=$2 file
+  file=/dl/$(basename "$url")
+  if [[ $sum == unpinned ]]; then
+    if ! curl -fsSL --retry 3 -o "$file.part" "$url"; then
+      echo "download failed: $url" >&2
+      exit 1
+    fi
+    mv "$file.part" "$file"
+  elif [[ ! -s $file ]] || ! echo "$sum  $file" | sha256sum -c --quiet - 2>/dev/null; then
+    if ! curl -fsSL --retry 3 -o "$file.part" "$url"; then
+      echo "download failed: $url" >&2
+      exit 1
+    fi
+    if ! echo "$sum  $file.part" | sha256sum -c --quiet - 2>/dev/null; then
+      echo "checksum mismatch for $url (expected $sum)" >&2
+      exit 1
+    fi
+    mv "$file.part" "$file"
+  fi
+  printf '%s\n' "$file"
+}
+
+source_entry() {
+  awk -v name="$1" '$1 == name { print $2, $3 }' /bundle/sources.lock
+}
+
+fetch_source() {
+  local entry
+  entry=$(source_entry "$1")
+  [[ -n $entry ]] || { echo "$1 is missing from sources.lock" >&2; exit 1; }
+  set -- $entry
+  fetch "$2" "$1"
+}
+
+expose() {
+  local target=$1 name=${2:-$(basename "$1")}
+  chmod +x "$payload/$target"
+  ln -sfn "../$target" "$payload/bin/$name"
+}
+
+log "Installing build dependencies"
+dnf -y -q install \
+  bsdtar binutils cargo diffutils file findutils gcc gcc-c++ git-core golang \
+  gzip make ncurses patch python3 python3-pip python3.12 rust tar unzip which \
+  wget xcb-util xcb-util-image xz zstd >/dev/null
+
+rm -rf "$payload" "$build_home"
+mkdir -p "$payload"/{bin,opt,fonts} "$build_home"
+echo "$id" >"$payload/VERSION"
+
+log "Fetching the tools pinned in mise.lock"
+declare -A executables=(
+  [aichat]=aichat [bat]=bat [delta]=delta [eza]=eza [fd]=fd [fzf]=fzf
+  [github:YS-L/csvlens]=csvlens [github:mobydeck/atch]=atch [glow]=glow
+  [jq]=jq-linux-amd64=jq [just]=just [lnav]=lnav [neovim]=nvim
+  [node]="node npm npx corepack" [ripgrep]=rg [sd]=sd [sheldon]=sheldon
+  [starship]=starship [tealdeer]=tealdeer-linux-x86_64-musl=tldr
+  [uv]="uv uvx" [yq]=yq_linux_amd64=yq
+)
+skipped=" pipx:dotbot tree-sitter "
+
+python3.12 - "$src/dotfiles/mise/mise.lock" >/work/mise-tools <<'EOF'
+import sys, tomllib
+with open(sys.argv[1], 'rb') as f:
+    lock = tomllib.load(f)
+for name, entries in lock['tools'].items():
+    entry = entries[-1]
+    platform = entry.get('platforms.linux-x64', {})
+    checksum = platform.get('checksum', '-').removeprefix('sha256:')
+    print(name, entry['version'], checksum, platform.get('url', '-'))
+EOF
+dnf -y -q remove python3.12 >/dev/null
+
+: >/work/manifest.tsv
+while read -r tool version sum url; do
+  [[ $skipped == *" $tool "* ]] && continue
+  [[ -n ${executables[$tool]+set} ]] || {
+    echo "mise.lock has $tool, which bundle/lib/stage does not know how to ship" >&2
+    exit 1
+  }
+  override=$(source_entry "$tool")
+  [[ -z $override ]] || read -r sum url <<<"$override"
+  [[ $sum != - && $url != - ]] || {
+    echo "$tool has no checksum or URL in mise.lock; pin it in sources.lock" >&2
+    exit 1
+  }
+  file=$(fetch "$url" "$sum")
+  dir=${tool##*[:/]}
+  mkdir -p "$payload/opt/$dir"
+  case $file in
+    *.tar.gz | *.tgz | *.tar.xz | *.zip) bsdtar --no-xattrs --no-acls --no-fflags -xf "$file" -C "$payload/opt/$dir" ;;
+    *) cp "$file" "$payload/opt/$dir/" ;;
+  esac
+  for spec in ${executables[$tool]}; do
+    exe=${spec%%=*} link=${spec#*=}
+    path=$(find "$payload/opt/$dir" -name "$exe" \( -type f -o -type l \) |
+      awk '{ print length, $0 }' | sort -n | head -1 | cut -d' ' -f2-)
+    [[ -n $path ]] || { echo "no $exe in $url" >&2; exit 1; }
+    expose "${path#"$payload"/}" "$link"
+  done
+  record mise "$dir" "$version"
+done </work/mise-tools
+
+export PATH=$payload/bin:$PATH
+
+log "Compiling tree-sitter"
+source_file=$(fetch_source tree-sitter-src)
+tar -xzf "$source_file" -C /tmp
+(
+  cd /tmp/tree-sitter-*/
+  CARGO_HOME=/dl/cargo CARGO_TARGET_DIR=/dl/cargo-target \
+    cargo build --quiet --release --locked -p tree-sitter-cli
+)
+install -Dm755 /dl/cargo-target/release/tree-sitter "$payload/opt/tree-sitter/tree-sitter"
+expose opt/tree-sitter/tree-sitter
+record mise tree-sitter "$(tree-sitter --version | cut -d" " -f2)"
+
+log "Fetching patchelf"
+mkdir -p /tmp/patchelf
+source_file=$(fetch_source patchelf)
+tar -xzf "$source_file" -C /tmp/patchelf
+patchelf=/tmp/patchelf/bin/patchelf
+
+log "Unpacking wezterm"
+wez=$payload/opt/wezterm
+mkdir -p "$wez"
+source_file=$(fetch_source wezterm-gui)
+bsdtar --no-xattrs --no-acls --no-fflags -xf "$source_file" -C "$wez"
+source_file=$(fetch_source wezterm-common)
+bsdtar --no-xattrs --no-acls --no-fflags -xf "$source_file" -C "$wez"
+rm -rf "$wez/etc" "$wez/usr/share/nautilus-python"
+mkdir -p "$wez/usr/lib64"
+cp -L /usr/lib64/libxcb-image.so.0 /usr/lib64/libxcb-util.so.1 "$wez/usr/lib64/"
+$patchelf --set-rpath '$ORIGIN/../lib64' "$wez/usr/bin/wezterm-gui"
+expose opt/wezterm/usr/bin/wezterm
+expose opt/wezterm/usr/bin/wezterm-gui
+record other wezterm "$("$wez/usr/bin/wezterm" --version | cut -d" " -f2)"
+
+log "Unpacking zsh"
+mkdir -p "$payload/opt/zsh"
+source_file=$(fetch_source zsh)
+tar -xzf "$source_file" -C "$payload/opt/zsh"
+cp "$wez/usr/share/zsh/site-functions/_wezterm" "$payload/opt/zsh/share/zsh/5.8/functions/"
+expose opt/zsh/bin/zsh
+record other zsh 5.8
+
+log "Fetching Claude Code"
+set -- $(source_entry claude)
+claude_version=$(basename "$(dirname "$(dirname "$2")")")
+source_file=$(fetch_source claude)
+install -Dm755 "$source_file" "$payload/opt/claude/$claude_version"
+record other claude "$claude_version"
+
+log "Compiling keyd"
+source_file=$(fetch_source keyd)
+tar -xzf "$source_file" -C /tmp
+make -s -C /tmp/keyd-*/ COMMIT=release >/dev/null
+install -Dm755 /tmp/keyd-*/bin/keyd "$payload/opt/keyd/keyd"
+install -m755 /bundle/lib/keyd-install "$payload/opt/keyd/install"
+record other keyd "$("$payload/opt/keyd/keyd" -v | cut -d" " -f2)"
+
+log "Fetching fonts"
+while read -r name _; do
+  source_file=$(fetch_source "$name")
+  cp "$source_file" "$payload/fonts/"
+done < <(grep '^font-' /bundle/sources.lock)
+
+log "Copying the dotfiles"
+cp -a "$src/dotfiles" "$payload/dotfiles"
+[[ -e $payload/dotfiles/eza/theme.yml ]] || ln -s theme-universal.yml "$payload/dotfiles/eza/theme.yml"
+git config --global --add safe.directory '*'
+dotfiles_status=$(git -C "$payload/dotfiles" status --porcelain --ignore-submodules=none)
+mkdir -p "$payload/terminfo"
+tic -x -o "$payload/terminfo" "$payload/dotfiles/wezterm/wezterm.terminfo"
+install -m755 /bundle/install "$payload/install"
+
+log "Installing nvim plugins, language servers and parsers"
+export HOME=$build_home
+mkdir -p "$HOME/.config/sheldon" "$HOME/.local/share/nvim/lazy"
+ln -s "$payload/dotfiles/nvim" "$HOME/.config/nvim"
+nvim_log=/work/nvim.log
+cp -p "$payload/dotfiles/nvim/lazy-lock.json" /work/lazy-lock.json
+nvim --headless '+Lazy! restore' +qa >>"$nvim_log" 2>&1
+nvim --headless '+Lazy load nvim-lspconfig' +MasonToolsInstallSync +qa >>"$nvim_log" 2>&1
+nvim --headless -c "lua require('nvim-treesitter').install({ '$(IFS=,; echo "${parsers[*]}" | sed "s/,/', '/g")' }):wait(1800000)" -c qa >>"$nvim_log" 2>&1
+cp -p /work/lazy-lock.json "$payload/dotfiles/nvim/lazy-lock.json"
+missing=
+[[ -d $HOME/.local/share/nvim/lazy/foxglove.nvim ]] || missing+=" foxglove.nvim"
+while read -r name commit; do
+  head=$(git -C "$HOME/.local/share/nvim/lazy/$name" rev-parse HEAD 2>/dev/null) || head=none
+  [[ $head == "$commit" ]] || missing+=" $name@${commit:0:7}"
+done < <(jq -r 'to_entries[] | "\(.key) \(.value.commit)"' "$payload/dotfiles/nvim/lazy-lock.json")
+for pkg in bash-language-server yaml-language-server json-lsp jdtls \
+  lua-language-server marksman lemminx stylua; do
+  [[ -d $HOME/.local/share/nvim/mason/packages/$pkg ]] || missing+=" $pkg"
+done
+for parser in "${parsers[@]}"; do
+  [[ -f $HOME/.local/share/nvim/site/parser/$parser.so ]] || missing+=" parser:$parser"
+done
+[[ -z $missing ]] || {
+  tail -n 40 "$nvim_log" >&2
+  echo "nvim did not install:$missing (full log: ~/.cache/devtools/work/nvim.log)" >&2
+  exit 1
+}
+for pkg in "$HOME"/.local/share/nvim/mason/packages/*/; do
+  receipt=$pkg/mason-receipt.json
+  version=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source"]["id"].rsplit("@", 1)[-1])' "$receipt" 2>/dev/null || echo '?')
+  record mason "$(basename "$pkg")" "$version"
+done
+for plugin in "$HOME"/.local/share/nvim/lazy/*/; do
+  record nvim "$(basename "$plugin")" "$(git -C "$plugin" rev-parse --short=7 HEAD)"
+done
+for parser in "${parsers[@]}"; do
+  revision=$(<"$HOME/.local/share/nvim/site/parser-info/$parser.revision")
+  [[ $revision == v[0-9]* ]] || revision=${revision:0:7}
+  record treesitter "$parser" "$revision"
+done
+
+log "Installing dotbot"
+dotbot_version=$(awk '$1 == "pipx:dotbot" { print $2 }' /work/mise-tools)
+uv pip install --quiet --python /usr/bin/python3 --target "$payload/opt/dotbot/lib" "dotbot==$dotbot_version"
+rm -rf "$payload/opt/dotbot/lib/bin"
+cat >"$payload/opt/dotbot/dotbot" <<'EOF'
+#!/bin/sh
+here=$(cd "$(dirname "$0")" && pwd -P)
+command -v python3 >/dev/null || { echo "dotbot needs python3" >&2; exit 1; }
+PYTHONPATH=$here/lib exec python3 -s -c 'import sys; from dotbot.cli import main; sys.exit(main())' "$@"
+EOF
+chmod +x "$payload/opt/dotbot/dotbot"
+record other dotbot "$dotbot_version"
+
+log "Locking zsh plugins and fetching tldr pages"
+ln -s "$payload/dotfiles/sheldon/plugins.toml" "$HOME/.config/sheldon/plugins.toml"
+sheldon --quiet lock
+mkdir -p "$HOME/.cache/tealdeer/tldr-pages"
+tldr --update --quiet
+
+wezterm_plugin=.local/share/wezterm/plugins/httpssCssZssZsgithubsDscomsZsmrjones2014sZssmart-splitssDsnvim
+mkdir -p "$HOME/$(dirname "$wezterm_plugin")"
+cp -a "$HOME/.local/share/nvim/lazy/smart-splits.nvim" "$HOME/$wezterm_plugin"
+
+for path in .local/share/nvim/lazy .local/share/nvim/mason .local/share/nvim/site \
+  .local/share/sheldon .cache/tealdeer "$wezterm_plugin"; do
+  mkdir -p "$payload/home/$(dirname "$path")"
+  cp -a "$HOME/$path" "$payload/home/$path"
+done
+"$payload/opt/dotbot/dotbot" --dry-run --quiet --only link \
+  -d "$payload/dotfiles" -c "$payload/dotfiles/install.conf.yaml"
+
+width=$(cut -f2 /work/manifest.tsv | awk '{ if (length > w) w = length } END { print w }')
+for category in mise other nvim mason treesitter; do
+  echo "$category"
+  awk -F'\t' -v c="$category" -v w="$width" '$1 == c { printf "  %-*s  %s\n", w, $2, $3 }' /work/manifest.tsv |
+    sort -f
+  echo
+done | sed '$d' >"$payload/manifest"
+
+log "Checking the payload"
+cd "$payload"
+if [[ $(git -C dotfiles status --porcelain --ignore-submodules=none) != "$dotfiles_status" ]]; then
+  echo "the build changed the shipped dotfiles repository:" >&2
+  git -C dotfiles status --short >&2
+  exit 1
+fi
+if leaked=$(grep -rlF -- "$build_home" dotfiles | grep -v '^dotfiles/bundle/'); then
+  echo "files in the shipped dotfiles refer to the build HOME:" >&2
+  echo "$leaked" >&2
+  exit 1
+fi
+grep -rlIF --exclude-dir=.git -- "$build_home" . | sed 's|^\./||' | grep -v '^dotfiles/' | sort >relocate.list
+find . -path ./dotfiles -prune -o -type l -lname "$build_home/*" -printf '%P\n' | sort >relocate-links.list
+if stale=$(find . -type l -lname '/work/*' | grep .); then
+  echo "symlinks point into the build directory:" >&2
+  echo "$stale" >&2
+  exit 1
+fi
+binary_refs=$(
+  grep -rlF --exclude='*.pyc' -- "$build_home" . | sed 's|^\./||' | grep -v '^dotfiles/' | sort |
+    comm -23 - relocate.list |
+    while read -r f; do
+      if LC_ALL=C grep -aoE -- "$build_home[A-Za-z0-9._/+-]*" "$f" | grep -qv "^$build_home/\.cache/"; then
+        echo "$f"
+      fi
+    done
+)
+if [[ -n $binary_refs ]]; then
+  echo "binary files embed the build HOME and cannot be relocated:" >&2
+  echo "$binary_refs" >&2
+  exit 1
+fi
+if stale=$(grep -rlIE -- '/work/(payload|src)' . | grep -v '^\./dotfiles/bundle/'); then
+  echo "files refer to the build directory:" >&2
+  echo "$stale" >&2
+  exit 1
+fi
+too_new=$(
+  find . -type f -size +1k -exec file -N -F '|' {} + | awk -F'|' '$2 ~ /ELF/ { print $1 }' |
+    while read -r f; do
+      need=$(objdump -T "$f" 2>/dev/null | grep -oE 'GLIBC_[0-9.]+' | sed 's/GLIBC_//' | sort -Vu | tail -1)
+      [[ -z $need ]] || [[ $(printf '%s\n%s\n' "$need" "$glibc_max" | sort -V | tail -1) == "$glibc_max" ]] ||
+        echo "$need $f"
+    done
+)
+if [[ -n $too_new ]]; then
+  echo "these need a glibc newer than $glibc_max:" >&2
+  echo "$too_new" >&2
+  exit 1
+fi
+
+log "Compressing the payload"
+cd /work
+tar -C "$payload" -cf - . | zstd -q -T0 -19 -o /work/out/payload.tar.zst
+
+log "Building the launcher"
+(
+  cd /bundle/launcher
+  GOMODCACHE=/dl/go-mod GOCACHE=/dl/go-cache CGO_ENABLED=0 \
+    go build -trimpath -ldflags '-s -w' -o /tmp/launcher .
+)
+/tmp/launcher pack /work/out/payload.tar.zst "$payload/manifest" "$id" /work/out/devtools
+rm /work/out/payload.tar.zst

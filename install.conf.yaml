@@ -1,0 +1,121 @@
+- defaults:
+    link:
+      create: true
+      relink: true
+      force: true
+    shell:
+      stdout: true
+      stderr: true
+
+- link:
+    ~/.zshrc:       zshrc
+    ~/.zshenv:      zshenv
+    ~/.zsh_aliases: zsh_aliases
+    ~/.gitconfig:   gitconfig
+    ~/.fdignore:    fdignore
+    ~/.wezterm.lua: wezterm/wezterm.lua
+    ~/.ssh/config:  ssh/config
+
+    ~/.config/fzf:       fzf
+    ~/.config/foxglove:  foxglove
+    ~/.config/zle:       zle
+    ~/.config/ripgreprc: ripgreprc
+
+    ~/.config/starship.toml: starship/starship.toml
+    ~/.config/wezterm/rc.sh: wezterm/rc.sh
+    ~/.config/eza:  eza
+    ~/.config/git:  git
+    ~/.config/nvim: nvim
+    ~/.config/bat:  bat
+
+    ~/.config/sheldon/plugins.toml: sheldon/plugins.toml
+
+    ~/.config/mise/config.toml: mise/config.toml
+    ~/.config/mise/mise.lock:   mise/mise.lock
+    ~/.config/mise/tasks:       mise/tasks
+
+    ~/.config/lnav/configs/installed/10-foxglove-theme.json: lnav/theme.json
+
+    ~/.config/aichat/config.yaml:          aichat/config.yaml
+    ~/.config/aichat/models-override.yaml: aichat/models-override.yaml
+    ~/.config/aichat/roles/general.md:     aichat/roles/general.md
+    ~/.config/aichat/roles/shell.md:       aichat/roles/shell.md
+    ~/.claude/settings.json: claude/settings.json
+    ~/.claude/scripts:       claude/scripts
+
+    ~/.config/autostart/ssh-add.desktop: kde/autostart/ssh-add.desktop
+
+- link:
+    ~/.local/bin/:
+      glob: true
+      path: bin/*
+
+    ~/.local/share/fonts/:
+      glob: true
+      path: resources/fonts/*
+
+- shell:
+  - description: Install LigaSFMono Nerd Font
+    command: |
+      if command -v mise >/dev/null 2>&1; then
+        mise run install-fonts
+      else
+        echo "  skipped: mise not installed"
+      fi
+
+  - description: Install the wezterm AppImage, icon and desktop entry
+    command: |
+      if command -v mise >/dev/null 2>&1; then
+        mise run install-wezterm
+      else
+        echo "  skipped: mise not installed"
+      fi
+
+  - description: Install Spotify from Flathub
+    command: |
+      if command -v mise >/dev/null 2>&1; then
+        mise run install-spotify
+      else
+        echo "  skipped: mise not installed"
+      fi
+
+  - description: Compile the wezterm terminfo entry
+    command: |
+      if ! command -v tic >/dev/null 2>&1; then
+        echo "  skipped: tic not installed"
+        exit 0
+      fi
+      mkdir -p "$HOME/.terminfo"
+      [ -f "$HOME/.terminfo/w/wezterm" ] && chmod u+w "$HOME/.terminfo/w/wezterm"
+      tic -x wezterm/wezterm.terminfo
+
+  - description: Default the eza theme to the background-universal icon colours
+    command: '[ -e eza/theme.yml ] || ln -s theme-universal.yml eza/theme.yml'
+
+  - description: Register fonts
+    command: |
+      if command -v fc-cache >/dev/null 2>&1; then
+        fc-cache -f "$HOME/.local/share/fonts" >/dev/null 2>&1 || true
+      else
+        echo "  skipped: fc-cache not installed"
+      fi
+
+  - description: Apply KDE settings
+    command: |
+      if command -v busctl >/dev/null 2>&1 &&
+         busctl --user list 2>/dev/null | grep -q org.kde.kglobalaccel; then
+        ./kde/apply-settings
+      else
+        echo "  skipped: no KDE session"
+      fi
+
+  - description: Install nvim plugins and seed the colour palette
+    command: |
+      if ! command -v nvim >/dev/null 2>&1; then
+        echo "  skipped: nvim not installed"
+        exit 0
+      fi
+      nvim --headless "+Lazy! restore" +qa
+      if [ ! -f "$HOME/.local/share/foxglove/colorscheme.lua" ]; then
+        nvim --headless "+Foxglove palette=tokyonight" +qa
+      fi

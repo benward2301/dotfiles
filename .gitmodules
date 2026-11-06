@@ -1,0 +1,3 @@
+[submodule "fzf/navigator"]
+	path = fzf/navigator
+	url = https://github.com/benward2301/fzf-navigator.git

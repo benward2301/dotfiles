@@ -1,0 +1,6 @@
+
+--theme="foxglove"
+
+--map-syntax "justfile:Makefile"
+--map-syntax ".justfile:Makefile"
+--map-syntax "*.just:Makefile"

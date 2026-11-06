@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Install Spotify from Flathub (user scope)"
+set -euo pipefail
+
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install -y --user --noninteractive flathub com.spotify.Client

@@ -1,0 +1,103 @@
+#!/bin/sh
+set -eu
+
+usage="usage: bundle/build [--fresh]
+
+  --fresh  unpack the Rocky Linux 9 root filesystem again"
+
+here=$(cd "$(dirname "$0")" && pwd)
+repo=$(dirname "$here")
+cache=${XDG_CACHE_HOME:-$HOME/.cache}/devtools
+rootfs=$cache/rootfs
+work=$cache/work
+
+case ${1-} in
+  '') ;;
+  --fresh) [ ! -d "$rootfs" ] || unshare --map-auto --map-root-user rm -rf "$rootfs" ;;
+  -h | --help) echo "$usage"; exit 0 ;;
+  *) echo "$usage" >&2; exit 2 ;;
+esac
+
+[ "$(id -u)" -ne 0 ] || { echo "run this as your own user, not root" >&2; exit 1; }
+as_root() { unshare --map-auto --map-root-user "$@"; }
+
+log() { printf '\n==> %s\n' "$*"; }
+
+mkdir -p "$cache/dl"
+
+if [ ! -f "$rootfs/.ready" ]; then
+  log "Unpacking the Rocky Linux 9 root filesystem"
+  set -- $(awk '$1 == "rocky-oci" { print $2, $3 }' "$here/sources.lock")
+  oci_tar=$cache/dl/$(basename "$2")
+  [ -s "$oci_tar" ] || curl -fL --retry 3 -o "$oci_tar" "$2"
+  echo "$1  $oci_tar" | sha256sum -c --quiet -
+  rm -rf "$cache/oci"
+  mkdir -p "$cache/oci"
+  tar -xJf "$oci_tar" -C "$cache/oci"
+  [ ! -d "$rootfs" ] || as_root rm -rf "$rootfs"
+  as_root "$here/lib/ns" extract "$cache/oci" "$rootfs"
+  rm -rf "$cache/oci"
+  touch "$rootfs/.ready"
+fi
+
+log "Exporting the dotfiles"
+git -C "$repo" submodule update --init --recursive
+[ ! -d "$work" ] || as_root rm -rf "$work"
+mkdir -p "$work/src" "$work/out"
+dest=$work/src/dotfiles
+git clone --quiet --no-local --no-checkout "$repo" "$dest"
+git -C "$dest" for-each-ref --format='delete %(refname)' refs/remotes |
+  git -C "$dest" update-ref --no-deref --stdin
+if origin=$(git -C "$repo" remote get-url origin 2>/dev/null); then
+  git -C "$dest" remote set-url origin "$origin"
+  git -C "$dest" fetch --quiet --no-tags "$repo" '+refs/remotes/origin/*:refs/remotes/origin/*'
+  if origin_head=$(git -C "$repo" symbolic-ref --quiet refs/remotes/origin/HEAD); then
+    git -C "$dest" symbolic-ref refs/remotes/origin/HEAD "$origin_head"
+  fi
+else
+  git -C "$dest" remote remove origin
+fi
+commit=$(git -C "$repo" rev-parse HEAD)
+if branch=$(git -C "$repo" symbolic-ref --quiet --short HEAD); then
+  git -C "$dest" checkout --quiet -B "$branch" "$commit"
+  git -C "$dest" branch --quiet --unset-upstream 2>/dev/null || true
+  if git -C "$dest" show-ref --quiet --verify "refs/remotes/origin/$branch"; then
+    git -C "$dest" branch --quiet --set-upstream-to="origin/$branch"
+  fi
+else
+  git -C "$dest" checkout --quiet --detach "$commit"
+fi
+git -C "$dest" config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null |
+  while read -r key path; do
+    name=${key#submodule.}
+    name=${name%.path}
+    git -C "$dest" ls-files --stage -- "$path" | grep -q "^160000 " || continue
+    url=$(git -C "$dest" config -f .gitmodules "submodule.$name.url")
+    git -C "$dest" config "submodule.$name.url" "$repo/$path"
+    git -C "$dest" -c protocol.file.allow=always submodule --quiet update --init -- "$path"
+    git -C "$dest" config "submodule.$name.url" "$url"
+    git -C "$dest/$path" --git-dir=.git remote set-url origin "$url"
+  done
+(
+  cd "$repo"
+  {
+    git ls-files -z --cached --others --exclude-standard
+    git submodule --quiet foreach --recursive \
+      'git ls-files -z --cached --others --exclude-standard | sed -z "s|^|$displaypath/|"'
+  } | tar --null --no-recursion --ignore-failed-read -T - -cf - 2>/dev/null
+) | tar -xf - -C "$dest"
+git -C "$repo" ls-files -z --deleted | (cd "$dest" && xargs -0 -r rm -f --)
+
+id=$(date -u +%Y%m%d)-$(git -C "$repo" rev-parse --short HEAD)
+[ -z "$(git -C "$repo" status --porcelain)" ] || id=$id-dirty
+
+log "Staging bundle $id inside Rocky Linux 9"
+unshare --map-auto --map-root-user --mount --pid --fork \
+  "$here/lib/ns" run "$rootfs" "$here" "$work" "$cache/dl" /bundle/lib/stage "$id"
+
+mkdir -p "$here/dist"
+mv -f "$work/out/devtools" "$here/dist/devtools"
+(cd "$here/dist" && sha256sum devtools >devtools.sha256)
+as_root rm -rf "$work"
+
+log "Built $here/dist/devtools ($(du -h "$here/dist/devtools" | cut -f1))"

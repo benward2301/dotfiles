@@ -1,0 +1,107 @@
+#!/usr/bin/env zsh
+
+set -e
+
+META_ONLY=0x01000022
+META_A=$(( 0x10000000 | 0x41 ))
+META_D=$(( 0x10000000 | 0x44 ))
+META_R=$(( 0x10000000 | 0x52 ))
+META_W=$(( 0x10000000 | 0x57 ))
+META_S=$(( 0x10000000 | 0x53 ))
+META_SHIFT_A=$(( 0x10000000 | 0x02000000 | 0x41 ))
+META_SHIFT_W=$(( 0x10000000 | 0x02000000 | 0x57 ))
+META_SHIFT_S=$(( 0x10000000 | 0x02000000 | 0x53 ))
+META_SHIFT_D=$(( 0x10000000 | 0x02000000 | 0x44 ))
+META_Q=$(( 0x10000000 | 0x51 ))
+PRINT=0x01000009
+
+kglobal_clear() {
+  busctl --user call org.kde.kglobalaccel /kglobalaccel \
+    org.kde.KGlobalAccel setForeignShortcut "asai" \
+    4 "$1" "$2" "$3" "" 0
+}
+
+kglobal_set() {
+  local component=$1 action=$2 friendly=$3
+  shift 3
+  busctl --user call org.kde.kglobalaccel /kglobalaccel \
+    org.kde.KGlobalAccel setForeignShortcut "asai" \
+    4 "$component" "$action" "$friendly" "" $# "$@"
+}
+
+kwin_clear() { kglobal_clear kwin "$1" KWin; }
+kwin_set()   { kglobal_set kwin "$1" KWin "$2"; }
+
+kwin_clear "Overview"
+kwin_clear "Show Desktop"
+kglobal_clear plasmashell "next activity" plasmashell
+kglobal_clear plasmashell "previous activity" plasmashell
+kglobal_clear org.kde.spectacle.desktop RecordRegion Spectacle
+kglobal_clear org.kde.spectacle.desktop _launch Spectacle
+kglobal_clear plasmashell "manage activities" plasmashell
+kglobal_clear org.kde.spectacle.desktop FullScreenScreenShot Spectacle
+
+kglobal_set org.kde.spectacle.desktop FullScreenScreenShot Spectacle $PRINT
+
+kwriteconfig6 --file spectaclerc --group General --key autoSaveImage true
+kwriteconfig6 --file spectaclerc --group General --key clipboardGroup PostScreenshotCopyLocation
+
+kwin_set "Window Close" $META_Q
+
+kwin_set "Window Maximize" $META_W
+kwin_set "Window Minimize" $META_S
+
+kwin_set "Window to Previous Screen" $META_A
+kwin_set "Window to Next Screen" $META_D
+
+kwin_set "Window Quick Tile Left" $META_SHIFT_A
+kwin_set "Window Quick Tile Top" $META_SHIFT_W
+kwin_set "Window Quick Tile Bottom" $META_SHIFT_S
+kwin_set "Window Quick Tile Right" $META_SHIFT_D
+
+kglobal_set plasmashell "activate application launcher" plasmashell $META_R $META_ONLY
+kwinrc=~/.config/kwinrc
+if grep -q '^\[org.kde.kdecoration2\]' "$kwinrc" 2>/dev/null; then
+  sed -i '/^\[org.kde.kdecoration2\]/,/^\[/{s/^ButtonsOnLeft=.*/ButtonsOnLeft=/}' "$kwinrc"
+  grep -q '^ButtonsOnLeft=' "$kwinrc" || sed -i '/^\[org.kde.kdecoration2\]/a ButtonsOnLeft=' "$kwinrc"
+else
+  printf '\n[org.kde.kdecoration2]\nButtonsOnLeft=\n' >> "$kwinrc"
+fi
+for dev in $(busctl --user tree --list org.kde.KWin 2>/dev/null | grep '/org/kde/KWin/InputDevice/'); do
+  is_touchpad=$(busctl --user get-property org.kde.KWin "$dev" org.kde.KWin.InputDevice touchpad 2>/dev/null) || continue
+  [[ "$is_touchpad" == "b true" ]] || continue
+  busctl --user set-property org.kde.KWin "$dev" org.kde.KWin.InputDevice naturalScroll b true
+  busctl --user set-property org.kde.KWin "$dev" org.kde.KWin.InputDevice scrollFactor d 0.5
+done
+
+busctl --user call org.kde.KWin /KWin org.kde.KWin reconfigure
+
+taskbar_js='
+var first = ["applications:vivaldi-stable.desktop", "applications:org.wezfurlong.wezterm.desktop"];
+for (var p of panels()) {
+  for (var id of p.widgetIds) {
+    var w = p.widgetById(id);
+    if (w.type != "org.kde.plasma.icontasks" && w.type != "org.kde.plasma.taskmanager") continue;
+    w.currentConfigGroup = ["General"];
+    var rest = w.readConfig("launchers", []).filter(function (l) {
+      return first.indexOf(l) < 0 && l != "preferred://browser" && !/wezterm\.desktop$/.test(l);
+    });
+    w.writeConfig("launchers", first.concat(rest));
+    w.reloadConfig();
+  }
+}'
+busctl --user call org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell evaluateScript s "$taskbar_js" >/dev/null
+
+desktop_wp=$(grep '^Image=' ~/.config/plasma-org.kde.plasma.desktop-appletsrc 2>/dev/null | head -1)
+if [[ -n "$desktop_wp" ]]; then
+  lockrc=~/.config/kscreenlockerrc
+  section='[Greeter][Wallpaper][org.kde.image][General]'
+  if grep -qF "$section" "$lockrc" 2>/dev/null; then
+    sed -i "/^\[Greeter\]\[Wallpaper\]\[org\.kde\.image\]\[General\]/,/^\[/{s|^Image=.*|${desktop_wp}|}" "$lockrc"
+    grep -q "^Image=" "$lockrc" || sed -i "/^\[Greeter\]\[Wallpaper\]\[org\.kde\.image\]\[General\]/a ${desktop_wp}" "$lockrc"
+  else
+    printf '\n%s\n%s\n' "$section" "$desktop_wp" >> "$lockrc"
+  fi
+fi
+
+echo "KDE settings applied"
