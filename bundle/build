@@ -1,31 +1,42 @@
 #!/bin/sh
 set -eu
 
-usage="usage: bundle/build [--fresh]
+usage="usage: bundle/build [--fresh | --host]
 
-  --fresh  unpack the Rocky Linux 9 root filesystem again"
+  --fresh  unpack the Rocky Linux 9 root filesystem again
+  --host   build directly on this machine, as root, without a root filesystem
+           or user namespace. The machine must be Rocky Linux 9, such as a CI
+           container; it creates /bundle, /work and /dl symlinks"
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(dirname "$here")
 cache=${XDG_CACHE_HOME:-$HOME/.cache}/devtools
 rootfs=$cache/rootfs
 work=$cache/work
+mode=sandbox
 
 case ${1-} in
   '') ;;
   --fresh) [ ! -d "$rootfs" ] || unshare --map-auto --map-root-user rm -rf "$rootfs" ;;
+  --host) mode=host ;;
   -h | --help) echo "$usage"; exit 0 ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
 
-[ "$(id -u)" -ne 0 ] || { echo "run this as your own user, not root" >&2; exit 1; }
-as_root() { unshare --map-auto --map-root-user "$@"; }
+if [ "$mode" = host ]; then
+  [ "$(id -u)" -eq 0 ] || { echo "--host must run as root" >&2; exit 1; }
+  grep -qs 'release 9\.' /etc/rocky-release || { echo "--host needs Rocky Linux 9" >&2; exit 1; }
+  as_root() { "$@"; }
+else
+  [ "$(id -u)" -ne 0 ] || { echo "run this as your own user, not root" >&2; exit 1; }
+  as_root() { unshare --map-auto --map-root-user "$@"; }
+fi
 
 log() { printf '\n==> %s\n' "$*"; }
 
 mkdir -p "$cache/dl"
 
-if [ ! -f "$rootfs/.ready" ]; then
+if [ "$mode" = sandbox ] && [ ! -f "$rootfs/.ready" ]; then
   log "Unpacking the Rocky Linux 9 root filesystem"
   set -- $(awk '$1 == "rocky-oci" { print $2, $3 }' "$here/sources.lock")
   oci_tar=$cache/dl/$(basename "$2")
@@ -92,8 +103,16 @@ id=$(date -u +%Y%m%d)-$(git -C "$repo" rev-parse --short HEAD)
 [ -z "$(git -C "$repo" status --porcelain)" ] || id=$id-dirty
 
 log "Staging bundle $id inside Rocky Linux 9"
-unshare --map-auto --map-root-user --mount --pid --fork \
-  "$here/lib/ns" run "$rootfs" "$here" "$work" "$cache/dl" /bundle/lib/stage "$id"
+if [ "$mode" = host ]; then
+  for pair in "bundle:$here" "work:$work" "dl:$cache/dl"; do
+    ln -sfn "${pair#*:}" "/${pair%%:*}"
+  done
+  env -i HOME=/root PATH=/usr/local/bin:/usr/bin:/usr/sbin TERM="${TERM:-dumb}" LANG=C.UTF-8 \
+    /bundle/lib/stage "$id"
+else
+  unshare --map-auto --map-root-user --mount --pid --fork \
+    "$here/lib/ns" run "$rootfs" "$here" "$work" "$cache/dl" /bundle/lib/stage "$id"
+fi
 
 mkdir -p "$here/dist"
 mv -f "$work/out/devtools" "$here/dist/devtools"

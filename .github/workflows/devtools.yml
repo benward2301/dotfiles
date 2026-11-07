@@ -1,0 +1,74 @@
+name: devtools
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: devtools
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  ROCKY_IMAGE: rockylinux/rockylinux:9.8.20260525.0
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/cache/devtools/dl
+          key: devtools-dl-${{ hashFiles('bundle/sources.lock', 'mise/mise.lock', 'nvim/lazy-lock.json') }}
+          restore-keys: devtools-dl-
+
+      - name: Build
+        run: |
+          mkdir -p "$RUNNER_TEMP/cache"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/src" \
+            -v "$RUNNER_TEMP/cache:/cache" \
+            -e XDG_CACHE_HOME=/cache \
+            -e OWNER="$(id -u):$(id -g)" \
+            "$ROCKY_IMAGE" \
+            sh -c '
+              set -e
+              dnf -y -q install git-core tar
+              git config --global --add safe.directory "*"
+              status=0
+              /src/bundle/build --host || status=$?
+              chown -R "$OWNER" /cache /src
+              exit $status
+            '
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(bundle/dist/devtools --version)
+          {
+            echo '```'
+            bundle/dist/devtools manifest
+            echo '```'
+          } >"$RUNNER_TEMP/notes.md"
+          if gh release view "devtools-$id" >/dev/null 2>&1; then
+            gh release upload "devtools-$id" bundle/dist/devtools bundle/dist/devtools.sha256 --clobber
+            gh release edit "devtools-$id" --notes-file "$RUNNER_TEMP/notes.md" --latest
+          else
+            gh release create "devtools-$id" bundle/dist/devtools bundle/dist/devtools.sha256 \
+              --title "devtools $id" --notes-file "$RUNNER_TEMP/notes.md" \
+              --target "$GITHUB_SHA" --latest
+          fi
