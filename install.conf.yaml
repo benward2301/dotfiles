@@ -27,6 +27,7 @@
     ~/.config/git:  git
     ~/.config/nvim: nvim
     ~/.config/bat:  bat
+    ~/.config/visidata: visidata
 
     ~/.config/sheldon/plugins.toml: sheldon/plugins.toml
 
