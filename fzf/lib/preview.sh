@@ -29,7 +29,7 @@ __fzf_preview_file() {
       return
       ;;
     json|jsonl)
-      __fzf_preview_json "$path"
+      __fzf_preview_text "$path"
       return
       ;;
     png|jpg|jpeg|gif|bmp|webp|svg|tiff|ico)
@@ -83,15 +83,7 @@ __fzf_preview_markdown_with_frontmatter() {
   fi
 }
 
-__fzf_preview_json() {
-  local path="$1"
 
-  if command -v jq &>/dev/null; then
-    jq -C . "$path"
-  else
-    __fzf_preview_text "$path"
-  fi
-}
 __fzf_preview_image_format() {
   if [[ -n "${WEZTERM_PANE-}" ]]; then
     echo iterm
